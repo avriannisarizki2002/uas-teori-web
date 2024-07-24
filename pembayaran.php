@@ -1,0 +1,153 @@
+<?php 
+	session_start();
+	$koneksi = new mysqli("localhost", "root", "", "tokobuku");
+
+	// Jika tidak ada session pelanggan maka tidak bisa diakses
+	if (!isset($_SESSION['pelanggan']) || empty($_SESSION['pelanggan'])) {
+		echo "<script>alert('Silahkan Login Terlebih Dahulu');</script>";
+		echo "<script>location='login.php';</script>";
+		exit();
+	}
+
+	// Mendapatkan id dari URL
+	$id_pem = $_GET['id'];
+	$ambil = $koneksi->query("SELECT * FROM pembelian WHERE id_pembelian='$id_pem'");
+	$detpem = $ambil->fetch_assoc();
+
+	// Mendapatkan id pelanggan yang beli
+	$id_pelanggan_beli = $detpem['id_pelanggan'];
+	// Mendapatkan id pelanggan yang login
+	$id_pelanggan_login = $_SESSION['pelanggan']['id_pelanggan'];
+
+	if ($id_pelanggan_login !== $id_pelanggan_beli) {
+		echo "<script>alert('Tidak Dapat Mengakses');</script>";
+		echo "<script>location='riwayat.php';</script>";
+		exit();
+	}
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Halaman Pembayaran</title>
+	<link rel="stylesheet" type="text/css" href="admin/assets/css/bootstrap.css">
+	<!-- Bootstrap -->
+	<link href="assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+	<!-- Custom CSS -->
+	<link href="assets/style.css" rel="stylesheet">
+
+	<style>
+		#header .headerBackground {
+			width: 1520px;
+			height: 250px;
+			background: url(img/background.jpg);
+			background-size: cover; 
+		}
+
+		#header {
+			background: blue;
+			width: 940px;
+			height: 240px;
+		}
+
+		h1 {
+			padding-top: 0px;
+		}
+
+		article {
+			background-color: white;
+		}
+	</style>
+</head>
+<body>
+	<div id="container">
+		<div id="header">
+			<div class="headerBackground">
+				<h1><font color="#f8192e"><br><br><b>&nbsp;&nbsp;Nisabook</font><font color="#ffffff"> Store</font></b></h1>
+			</div>
+		</div>
+
+		<!-- Navbar -->
+		<nav class="navbar navbar-default">
+			<div class="container" style="background: black;">
+				<ul class="nav navbar-nav">
+					<!-- Jika Sudah Login -->
+					<?php if (isset($_SESSION['pelanggan'])): ?>
+					<li><a href="logout.php" onclick="return confirm('Apakah Anda Yakin ?')">Logout</a></li>
+					<li><a href="riwayat.php">Riwayat</a></li>
+					<!-- Jika Belum Login -->
+					<?php else: ?>
+					<li><a href="login.php">Login</a></li>
+					<li><a href="daftar.php">Daftar</a></li>
+					<?php endif ?>				
+					<li><a href="index.php">Belanja</a></li>
+					<?php if (!isset($_SESSION["keranjang"])): ?>
+					<li><a href="rekomendasi.php">Rekomendasi</a></li>
+					<li><a href="keranjang.php">Keranjang<strong>(0)</strong></a></li>
+					<?php else: ?>
+					<?php $jml = 0; ?>
+					<?php foreach ($_SESSION["keranjang"] as $id_produk => $jumlah): ?>
+					<!-- Menampilkan Produk Perulangan Berdasarkan id_produk -->
+					<?php $ambildata = $koneksi->query("SELECT * FROM produk WHERE id_produk='$id_produk'"); ?>
+					<?php $pecah = $ambildata->fetch_assoc(); ?>
+					<?php $jml += $jumlah; ?>
+					<?php endforeach ?>
+					<li><a href="keranjang.php">Keranjang<strong>(<?php echo $jml ?>)</strong></a></li>
+					<?php endif ?>
+					<li><a href="bayar.php">Pembayaran</a></li>
+				</ul>
+			</div>
+		</nav>
+
+		<div class="container">
+			<h2>Konfirmasi Pembayaran</h2>
+			<p>Kirim Bukti Pembayaran Anda Disini</p>
+			<div class="alert alert-info">Total Tagihan Anda <strong>Rp. <?php echo number_format($detpem['total_pembelian']); ?></strong></div>
+
+			<form method="post" enctype="multipart/form-data">
+				<div class="form-group">
+					<label>Nama Penyetor</label>
+					<input type="text" name="nama" class="form-control" required="" placeholder="<?php echo $_SESSION['pelanggan']['nama_pelanggan']; ?>">
+				</div>
+				<div class="form-group">
+					<label>Bank</label>
+					<input type="text" name="bank" class="form-control" required="">
+				</div>
+				<div class="form-group">
+					<label>Jumlah (Rp.)</label>
+					<input type="number" name="jumlah" class="form-control" min="1" required="" placeholder="<?php echo $detpem['total_pembelian']; ?>">
+				</div>
+				<div class="form-group">
+					<label>Foto Bukti</label>
+					<input type="file" name="bukti" class="form-control" required="">
+					<p class="text-danger">Format Foto Bukti JPG Maksimal 2MB</p>
+				</div>
+				<button class="btn btn-primary" name="kirim">Kirim</button>
+			</form>
+		</div>
+
+		<?php 
+		if (isset($_POST['kirim'])) {
+			// Upload foto bukti
+			$namabukti = $_FILES['bukti']['name'];
+			$lokasibukti = $_FILES['bukti']['tmp_name'];
+			// Agar tidak sama fotonya
+			$namafiks = date('YmdHis').$namabukti;
+			// Lokasi foto
+			move_uploaded_file($lokasibukti, "bukti_pembayaran/".$namafiks);
+
+			$tanggal = date('Y-m-d');
+
+			$koneksi->query("INSERT INTO pembayaran(id_pembelian, nama, bank, jumlah, tanggal, bukti)
+				VALUES ('$id_pem', '$_POST[nama]', '$_POST[bank]', '$_POST[jumlah]', '$tanggal', '$namafiks')");
+
+			// Update data pembelian dari pending menjadi sudah kirim pembayaran
+			$koneksi->query("UPDATE pembelian SET status_pembelian = 'Proses' WHERE id_pembelian='$id_pem'");
+			echo "<script>alert('Terima Kasih Sudah Memberikan Bukti Pembayaran');</script>";
+			echo "<script>location='riwayat.php';</script>";
+			exit();
+		}
+		?>
+	</div>
+</body>
+</html>
